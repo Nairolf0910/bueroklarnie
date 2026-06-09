@@ -7,6 +7,7 @@ export interface Profile {
   street: string | null;
   city: string | null;
   postal_code: string | null;
+  role: 'admin' | 'user';
   created_at: string;
   updated_at: string;
 }

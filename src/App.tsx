@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { AdminRoute } from './components/AdminRoute';
 import { Landing } from './pages/Landing';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
@@ -118,9 +119,9 @@ function App() {
             <Route
               path="/admin"
               element={
-                <ProtectedRoute>
+                <AdminRoute>
                   <AdminLayout />
-                </ProtectedRoute>
+                </AdminRoute>
               }
             >
               <Route index element={<AdminDashboard />} />
