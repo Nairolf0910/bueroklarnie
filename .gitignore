@@ -24,3 +24,7 @@ Thumbs.db
 
 .env
 .env.*
+
+# Supabase
+*.sql
+supabase/
