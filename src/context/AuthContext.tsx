@@ -22,27 +22,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
+  const fetchProfile = (userId: string) => {
+    supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .single();
-
-    if (!error && data) {
-      setProfile(data as Profile);
-    } else {
-      setProfile(null);
-    }
+      .single()
+      .then(({ data, error }) => {
+        if (!error && data) {
+          // Safely handle missing role column — default to 'user'
+          const profileData = {
+            ...data,
+            role: data.role || 'user',
+          } as Profile;
+          setProfile(profileData);
+        } else {
+          setProfile(null);
+        }
+      })
+      .catch(() => {
+        setProfile(null);
+      });
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // 1. Get initial session first
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      }
+      setLoading(false);
+    });
+
+    // 2. Listen for auth changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        await fetchProfile(session.user.id);
+        fetchProfile(session.user.id);
       } else {
         setProfile(null);
       }
