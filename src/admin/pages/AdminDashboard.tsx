@@ -44,7 +44,8 @@ interface RecentNote {
   content: string;
   is_from_admin: boolean;
   created_at: string;
-  profiles: { full_name: string } | null;
+  user_id: string;
+  request_id: string | null;
   service_requests: { title: string } | null;
 }
 
@@ -68,7 +69,6 @@ export function AdminDashboard() {
 
   const loadData = async () => {
     try {
-      // Load stats
       const { count: totalClients } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true });
@@ -82,7 +82,6 @@ export function AdminDashboard() {
         .select('*', { count: 'exact', head: true })
         .in('status', ['Eingegangen', 'In Prüfung', 'Rückfrage']);
 
-      // Requests by status
       const statuses = ['Eingegangen', 'In Prüfung', 'Rückfrage', 'Abgeschlossen'];
       const requestsByStatus: Record<string, number> = {};
       for (const status of statuses) {
@@ -140,21 +139,31 @@ export function AdminDashboard() {
 
       setRecentUploads(uploadsData || []);
 
-      // Recent notes
-      const { data: notesData } = await supabase
+      // Recent notes — use request_id (canonical FK column)
+      const { data: notesData, error: notesError } = await supabase
         .from('notes')
         .select(`
           id,
           content,
           is_from_admin,
           created_at,
-          profiles ( full_name ),
+          user_id,
+          request_id,
           service_requests ( title )
         `)
         .order('created_at', { ascending: false })
         .limit(5);
 
-      setRecentNotes(notesData || []);
+      if (notesError) {
+        const { data: notesFallback } = await supabase
+          .from('notes')
+          .select('id, content, is_from_admin, created_at, user_id, request_id')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        setRecentNotes((notesFallback || []).map(n => ({ ...n, service_requests: null })));
+      } else {
+        setRecentNotes(notesData || []);
+      }
 
       setLoading(false);
     } catch (error) {
@@ -316,7 +325,6 @@ export function AdminDashboard() {
                   <div className={`w-2 h-2 rounded-full mt-2 ${note.is_from_admin ? 'bg-petrol-500' : 'bg-anthracite-400'}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-dark-blue-900">{note.profiles?.full_name || 'Unbekannt'}</span>
                       {note.is_from_admin && (
                         <span className="text-xs bg-petrol-100 text-petrol-700 px-1.5 py-0.5 rounded">Admin</span>
                       )}

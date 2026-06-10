@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FileCheck, Mail, Lock, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -21,6 +22,24 @@ export function Login() {
     if (error) {
       setError('E-Mail oder Passwort ist falsch.');
       setLoading(false);
+      return;
+    }
+
+    // After login, fetch the profile directly to check role
+    // (AuthContext may not have updated yet)
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/dashboard');
+      }
     } else {
       navigate('/dashboard');
     }

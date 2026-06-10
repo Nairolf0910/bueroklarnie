@@ -5,7 +5,6 @@ import {
   Search,
   Loader2,
   ChevronRight,
-  Filter,
   ArrowUpDown,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -13,8 +12,7 @@ import type { ServiceRequest } from '../../types/database';
 
 interface RequestWithProfile extends ServiceRequest {
   profiles: { full_name: string; email: string } | null;
-  uploaded_files: { count: number }[];
-  notes: { count: number }[];
+  files_count: number;
 }
 
 const statusConfig: Record<string, { color: string; bgColor: string; label: string }> = {
@@ -42,14 +40,14 @@ export function AdminAuftraege() {
   }, [filter, sortOrder]);
 
   const loadRequests = async () => {
+    setLoading(true);
     try {
       let query = supabase
         .from('service_requests')
         .select(`
           *,
           profiles ( full_name, email ),
-          uploaded_files (count),
-          notes (count)
+          uploaded_files (count)
         `);
 
       if (filter !== 'all') {
@@ -61,10 +59,16 @@ export function AdminAuftraege() {
       const { data, error } = await query;
 
       if (error) throw error;
-      setRequests(data || []);
-      setLoading(false);
+
+      const mapped = (data || []).map((r: any) => ({
+        ...r,
+        files_count: r.uploaded_files?.[0]?.count ?? 0,
+      }));
+
+      setRequests(mapped);
     } catch (error) {
       console.error('Error loading requests:', error);
+    } finally {
       setLoading(false);
     }
   };
@@ -160,7 +164,6 @@ export function AdminAuftraege() {
                 <th className="px-4 py-3 text-left text-sm font-semibold text-dark-blue-900">Status</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-dark-blue-900 hidden md:table-cell">Priorität</th>
                 <th className="px-4 py-3 text-center text-sm font-semibold text-dark-blue-900 hidden lg:table-cell">Dateien</th>
-                <th className="px-4 py-3 text-center text-sm font-semibold text-dark-blue-900 hidden lg:table-cell">Notizen</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-dark-blue-900 hidden sm:table-cell">Erstellt</th>
                 <th className="px-4 py-3 text-right text-sm font-semibold text-dark-blue-900">Details</th>
               </tr>
@@ -168,7 +171,7 @@ export function AdminAuftraege() {
             <tbody className="divide-y divide-anthracite-100">
               {filteredRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-anthracite-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-anthracite-500">
                     {search ? 'Keine Aufträge gefunden' : 'Keine Aufträge vorhanden'}
                   </td>
                 </tr>
@@ -196,10 +199,7 @@ export function AdminAuftraege() {
                       </span>
                     </td>
                     <td className="px-4 py-4 text-center hidden lg:table-cell">
-                      <span className="text-sm text-anthracite-600">{request.uploaded_files?.[0]?.count || 0}</span>
-                    </td>
-                    <td className="px-4 py-4 text-center hidden lg:table-cell">
-                      <span className="text-sm text-anthracite-600">{request.notes?.[0]?.count || 0}</span>
+                      <span className="text-sm text-anthracite-600">{request.files_count}</span>
                     </td>
                     <td className="px-4 py-4 hidden sm:table-cell">
                       <span className="text-sm text-anthracite-600">
