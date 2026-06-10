@@ -110,12 +110,7 @@ export function Upload() {
 
         const { error: uploadError } = await supabase.storage
           .from('documents')
-          .upload(fileName, fileItem.file, {
-            onUploadProgress: (progress) => {
-              const percent = (progress.loaded / progress.total) * 100;
-              updateFile(i, { progress: Math.round(percent) });
-            },
-          });
+          .upload(fileName, fileItem.file);
 
         if (uploadError) throw uploadError;
 

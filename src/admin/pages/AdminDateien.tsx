@@ -6,7 +6,6 @@ import {
   Loader2,
   Download,
   Trash2,
-  Filter,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { UploadedFile } from '../../types/database';

@@ -10,6 +10,8 @@ import {
   LogOut,
   Menu,
   X,
+  HelpCircle,
+  Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +23,8 @@ const navigation = [
   { name: 'Dateien', href: '/admin/dateien', icon: Upload },
   { name: 'Notizen', href: '/admin/notizen', icon: MessageCircle },
   { name: 'Aufgaben', href: '/admin/aufgaben', icon: ClipboardList },
+  { name: 'FAQ', href: '/admin/faq', icon: HelpCircle },
+  { name: 'Inhalte', href: '/admin/inhalte', icon: Settings },
 ];
 
 export function AdminLayout() {

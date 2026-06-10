@@ -59,7 +59,16 @@ export function Dashboard() {
           full_name: fullName,
           email: user!.email!,
         });
-        setProfile({ full_name: fullName, company_name: null } as Profile);
+        // Set minimal profile
+        setProfile({
+          id: user!.id,
+          email: user!.email!,
+          full_name: fullName,
+          company_name: undefined,
+          role: 'client',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
       } else {
         setProfile(profileData);
       }

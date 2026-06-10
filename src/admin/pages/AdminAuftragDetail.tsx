@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -10,15 +10,19 @@ import {
   Download,
   Trash2,
   Send,
-  Calendar,
   Building2,
   Mail,
   Clock,
   AlertCircle,
+  History,
+  Eye,
+  EyeOff,
+  PlusCircle,
+  X,
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import type { ServiceRequest, UploadedFile, Note, Profile } from '../../types/database';
+import type { ServiceRequest, UploadedFile, Profile } from '../../types/database';
 
 const statusConfig: Record<string, { color: string; bgColor: string; icon: React.ReactNode; label: string }> = {
   Eingegangen: { color: 'text-blue-700', bgColor: 'bg-blue-100', icon: <Clock className="w-5 h-5" />, label: 'Eingegangen' },
@@ -27,27 +31,53 @@ const statusConfig: Record<string, { color: string; bgColor: string; icon: React
   Abgeschlossen: { color: 'text-green-700', bgColor: 'bg-green-100', icon: <CheckCircle className="w-5 h-5" />, label: 'Abgeschlossen' },
 };
 
+interface RequestMessage {
+  id: string;
+  sender_user_id?: string;
+  sender_role: 'admin' | 'client';
+  message: string;
+  is_internal: boolean;
+  created_at: string;
+}
+
+interface RequestEvent {
+  id: string;
+  event_type: string;
+  event_label: string;
+  metadata: Record<string, unknown>;
+  visible_to_user: boolean;
+  created_at: string;
+}
+
 export function AdminAuftragDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
   const [request, setRequest] = useState<ServiceRequest | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [newNote, setNewNote] = useState('');
-  const [newNoteIsAdmin, setNewNoteIsAdmin] = useState(true);
+  const [messages, setMessages] = useState<RequestMessage[]>([]);
+  const [events, setEvents] = useState<RequestEvent[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isInternal, setIsInternal] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [sendingNote, setSendingNote] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [activeTab, setActiveTab] = useState<'messages' | 'events'>('messages');
 
   useEffect(() => {
     if (id) {
       loadData();
     }
   }, [id]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const loadData = async () => {
     try {
@@ -65,13 +95,11 @@ export function AdminAuftragDetail() {
       setEditTitle(requestData.title);
       setEditDescription(requestData.description || '');
 
-      // Load profile
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', requestData.user_id)
         .single();
-
       setProfile(profileData || null);
 
       const { data: filesData } = await supabase
@@ -79,16 +107,22 @@ export function AdminAuftragDetail() {
         .select('*')
         .eq('request_id', id)
         .order('created_at', { ascending: false });
-
       setFiles(filesData || []);
 
-      const { data: notesData } = await supabase
-        .from('notes')
+      const { data: messagesData } = await supabase
+        .from('request_messages')
         .select('*')
         .eq('request_id', id)
         .order('created_at', { ascending: true });
+      setMessages(messagesData || []);
 
-      setNotes(notesData || []);
+      const { data: eventsData } = await supabase
+        .from('request_events')
+        .select('*')
+        .eq('request_id', id)
+        .order('created_at', { ascending: true });
+      setEvents(eventsData || []);
+
       setLoading(false);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -115,6 +149,16 @@ export function AdminAuftragDetail() {
 
     if (!error) {
       setRequest({ ...request, ...updateData } as ServiceRequest);
+
+      await supabase.from('request_events').insert({
+        request_id: request.id,
+        event_type: 'status_change',
+        event_label: `Status geändert: ${statusConfig[newStatus]?.label || newStatus}`,
+        metadata: { old_status: request.status, new_status: newStatus },
+        visible_to_user: true,
+      });
+
+      loadData();
     }
   };
 
@@ -154,38 +198,55 @@ export function AdminAuftragDetail() {
       .eq('id', request.id);
 
     if (!error) {
-      setRequest({ ...request, description: editDescription.trim() || null });
+      setRequest({ ...request, description: editDescription.trim() || undefined });
       setEditingDescription(false);
     }
   };
 
-  const handleAddNote = async (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNote.trim() || !request) return;
+    if (!newMessage.trim() || !request) return;
 
-    setSendingNote(true);
+    setSendingMessage(true);
 
     try {
+      const adminId = (await supabase.auth.getUser()).data.user?.id;
+
       const { data, error } = await supabase
-        .from('notes')
+        .from('request_messages')
         .insert({
           request_id: request.id,
-          user_id: request.user_id,
-          content: newNote.trim(),
-          is_from_admin: newNoteIsAdmin,
+          sender_user_id: adminId,
+          sender_role: 'admin',
+          message: newMessage.trim(),
+          is_internal: isInternal,
         })
         .select()
         .single();
 
       if (error) throw error;
 
-      setNotes((prev) => [...prev, data]);
-      setNewNote('');
+      setMessages((prev) => [...prev, data]);
+      setNewMessage('');
     } catch (error) {
-      console.error('Error adding note:', error);
+      console.error('Error sending message:', error);
     }
 
-    setSendingNote(false);
+    setSendingMessage(false);
+  };
+
+  const toggleEventVisibility = async (event: RequestEvent) => {
+    const newVisibility = !event.visible_to_user;
+    const { error } = await supabase
+      .from('request_events')
+      .update({ visible_to_user: newVisibility })
+      .eq('id', event.id);
+
+    if (!error) {
+      setEvents((prev) =>
+        prev.map((e) => (e.id === event.id ? { ...e, visible_to_user: newVisibility } : e))
+      );
+    }
   };
 
   const handleDownloadFile = async (file: UploadedFile) => {
@@ -195,7 +256,6 @@ export function AdminAuftragDetail() {
         .createSignedUrl(file.file_path, 3600);
 
       if (error) throw error;
-
       window.open(data.signedUrl, '_blank');
     } catch (error) {
       console.error('Error downloading file:', error);
@@ -209,9 +269,28 @@ export function AdminAuftragDetail() {
       await supabase.storage.from('documents').remove([file.file_path]);
       await supabase.from('uploaded_files').delete().eq('id', file.id);
       setFiles((prev) => prev.filter((f) => f.id !== file.id));
+
+      await supabase.from('request_events').insert({
+        request_id: id,
+        event_type: 'file_deleted',
+        event_label: `Datei gelöscht: ${file.file_name}`,
+        metadata: { file_name: file.file_name },
+        visible_to_user: false,
+      });
     } catch (error) {
       console.error('Error deleting file:', error);
     }
+  };
+
+  const formatEventTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('de-DE', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   if (loading) {
@@ -222,9 +301,7 @@ export function AdminAuftragDetail() {
     );
   }
 
-  if (!request) {
-    return null;
-  }
+  if (!request) return null;
 
   return (
     <div className="space-y-6">
@@ -278,6 +355,7 @@ export function AdminAuftragDetail() {
                 to={`/admin/kunden/${profile.id}`}
                 className="inline-flex items-center gap-2 text-anthracite-600 hover:text-petrol-600 mt-1"
               >
+                <Building2 className="w-4 h-4" />
                 {profile.full_name} ({profile.email})
               </Link>
             )}
@@ -404,67 +482,164 @@ export function AdminAuftragDetail() {
             )}
           </div>
 
-          {/* Notes */}
+          {/* Messages & Events Tabs */}
           <div className="bg-white rounded-xl border border-anthracite-200 overflow-hidden">
-            <div className="p-4 border-b border-anthracite-100">
-              <h2 className="text-lg font-semibold text-dark-blue-900 flex items-center gap-2">
-                <MessageCircle className="w-5 h-5" />
-                Notizen ({notes.length})
-              </h2>
+            <div className="flex border-b border-anthracite-100">
+              <button
+                onClick={() => setActiveTab('messages')}
+                className={`flex-1 px-6 py-4 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                  activeTab === 'messages'
+                    ? 'text-petrol-700 bg-petrol-50 border-b-2 border-petrol-600'
+                    : 'text-anthracite-600 hover:bg-anthracite-50'
+                }`}
+              >
+                <MessageCircle className="w-4 h-4" />
+                Nachrichten ({messages.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('events')}
+                className={`flex-1 px-6 py-4 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                  activeTab === 'events'
+                    ? 'text-petrol-700 bg-petrol-50 border-b-2 border-petrol-600'
+                    : 'text-anthracite-600 hover:bg-anthracite-50'
+                }`}
+              >
+                <History className="w-4 h-4" />
+                Verlauf ({events.length})
+              </button>
             </div>
 
-            <div className="divide-y divide-anthracite-100 max-h-96 overflow-y-auto">
-              {notes.length === 0 ? (
-                <p className="p-6 text-anthracite-500 text-sm">Keine Notizen vorhanden</p>
-              ) : (
-                notes.map((note) => (
-                  <div
-                    key={note.id}
-                    className={`p-4 ${note.is_from_admin ? 'bg-petrol-50' : 'bg-anthracite-50'}`}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`text-sm font-medium ${note.is_from_admin ? 'text-petrol-700' : 'text-dark-blue-900'}`}>
-                        {note.is_from_admin ? 'BüroKlarNie (Admin)' : 'Kunde'}
-                      </span>
-                      <span className="text-xs text-anthracite-400">
-                        {new Date(note.created_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </span>
+            {activeTab === 'messages' ? (
+              <>
+                <div className="divide-y divide-anthracite-100 max-h-96 overflow-y-auto">
+                  {messages.length === 0 ? (
+                    <div className="p-8 text-center text-anthracite-500">
+                      <MessageCircle className="w-8 h-8 mx-auto mb-2 text-anthracite-300" />
+                      Noch keine Nachrichten vorhanden.
                     </div>
-                    <p className="text-anthracite-700 whitespace-pre-wrap">{note.content}</p>
-                  </div>
-                ))
-              )}
-            </div>
+                  ) : (
+                    messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`p-4 ${msg.sender_role === 'admin' ? (msg.is_internal ? 'bg-yellow-50' : 'bg-petrol-50') : 'bg-anthracite-50'}`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span
+                            className={`text-sm font-medium ${
+                              msg.sender_role === 'admin'
+                                ? msg.is_internal
+                                  ? 'text-yellow-700'
+                                  : 'text-petrol-700'
+                                : 'text-dark-blue-900'
+                            }`}
+                          >
+                            {msg.sender_role === 'admin' ? 'BüroKlarNie' : 'Kunde'}
+                          </span>
+                          {msg.is_internal && (
+                            <span className="text-xs bg-yellow-200 text-yellow-800 px-1.5 py-0.5 rounded">
+                              Intern
+                            </span>
+                          )}
+                          <span className="text-xs text-anthracite-400">
+                            {new Date(msg.created_at).toLocaleDateString('de-DE', {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-anthracite-700 whitespace-pre-wrap">{msg.message}</p>
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
 
-            <form onSubmit={handleAddNote} className="p-4 border-t border-anthracite-100">
-              <div className="flex items-center gap-2 mb-2">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={newNoteIsAdmin}
-                    onChange={(e) => setNewNoteIsAdmin(e.target.checked)}
-                    className="rounded"
-                  />
-                  Als Admin-Notiz (für Kunde sichtbar)
-                </label>
+                <form onSubmit={handleSendMessage} className="p-4 border-t border-anthracite-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isInternal}
+                        onChange={(e) => setIsInternal(e.target.checked)}
+                        className="rounded border-anthracite-300"
+                      />
+                      <span className={isInternal ? 'text-yellow-700' : 'text-anthracite-600'}>
+                        Intern (nicht für Kunde sichtbar)
+                      </span>
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder="Nachricht schreiben..."
+                      className="flex-1 px-4 py-2 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newMessage.trim() || sendingMessage}
+                      className={`px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                        isInternal
+                          ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                          : 'bg-petrol-600 hover:bg-petrol-700 text-white'
+                      }`}
+                    >
+                      {sendingMessage ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <div className="max-h-[28rem] overflow-y-auto">
+                {events.length === 0 ? (
+                  <div className="p-8 text-center text-anthracite-500">
+                    <History className="w-8 h-8 mx-auto mb-2 text-anthracite-300" />
+                    Noch keine Ereignisse vorhanden.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-anthracite-100">
+                    {events.map((event) => (
+                      <div
+                        key={event.id}
+                        className="p-4 flex items-start gap-3 hover:bg-anthracite-50 group"
+                      >
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            event.visible_to_user ? 'bg-petrol-100' : 'bg-yellow-100'
+                          }`}
+                        >
+                          {event.event_type === 'status_change' ? (
+                            <Clock className="w-4 h-4 text-petrol-600" />
+                          ) : event.event_type.includes('file') ? (
+                            <FileText className="w-4 h-4 text-petrol-600" />
+                          ) : (
+                            <History className="w-4 h-4 text-petrol-600" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-dark-blue-900">{event.event_label}</p>
+                          <p className="text-xs text-anthracite-500">{formatEventTime(event.created_at)}</p>
+                        </div>
+                        <button
+                          onClick={() => toggleEventVisibility(event)}
+                          className={`p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                            event.visible_to_user
+                              ? 'text-petrol-600 hover:bg-petrol-50'
+                              : 'text-yellow-600 hover:bg-yellow-50'
+                          }`}
+                          title={event.visible_to_user ? 'Für Kunde ausblenden' : 'Für Kunde sichtbar machen'}
+                        >
+                          {event.visible_to_user ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Neue Notiz schreiben..."
-                  className="flex-1 px-4 py-2 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500"
-                />
-                <button
-                  type="submit"
-                  disabled={!newNote.trim() || sendingNote}
-                  className="px-4 py-2 bg-petrol-600 text-white rounded-lg hover:bg-petrol-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {sendingNote ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                </button>
-              </div>
-            </form>
+            )}
           </div>
         </div>
 
@@ -476,7 +651,8 @@ export function AdminAuftragDetail() {
             <div className="space-y-3">
               {['Eingegangen', 'In Prüfung', 'Rückfrage', 'Abgeschlossen'].map((status) => {
                 const isActive = request.status === status;
-                const isPast = ['Eingegangen', 'In Prüfung', 'Rückfrage', 'Abgeschlossen'].indexOf(request.status) > ['Eingegangen', 'In Prüfung', 'Rückfrage', 'Abgeschlossen'].indexOf(status);
+                const statusOrder = ['Eingegangen', 'In Prüfung', 'Rückfrage', 'Abgeschlossen'];
+                const isPast = statusOrder.indexOf(request.status) > statusOrder.indexOf(status);
 
                 return (
                   <button
@@ -532,6 +708,14 @@ export function AdminAuftragDetail() {
                   {new Date(request.updated_at).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' })}
                 </dd>
               </div>
+              {request.due_date && (
+                <div>
+                  <dt className="text-anthracite-500">Fällig</dt>
+                  <dd className="font-medium text-orange-700">
+                    {new Date(request.due_date).toLocaleDateString('de-DE')}
+                  </dd>
+                </div>
+              )}
               {request.completed_at && (
                 <div>
                   <dt className="text-anthracite-500">Abgeschlossen</dt>
@@ -549,7 +733,7 @@ export function AdminAuftragDetail() {
               <h3 className="text-lg font-semibold text-dark-blue-900 mb-4">Kunde</h3>
               <Link
                 to={`/admin/kunden/${profile.id}`}
-                className="block hover:bg-anthracite-50 -mx-6 px-6 py-2"
+                className="block hover:bg-anthracite-50 -mx-6 px-6 py-2 rounded"
               >
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-10 h-10 bg-petrol-100 rounded-full flex items-center justify-center">

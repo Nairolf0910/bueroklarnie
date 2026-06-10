@@ -1,14 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  MessageCircle,
-  Search,
-  Loader2,
-  Send,
-  Edit3,
-  X,
-  Filter,
-} from 'lucide-react';
+import { MessageCircle, Search, Loader2, CreditCard as Edit3, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Note } from '../../types/database';
 

@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Users,
-  Search,
   Loader2,
   ChevronLeft,
   Mail,
@@ -13,7 +11,6 @@ import {
   FileText,
   Upload,
   MessageCircle,
-  Eye,
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';

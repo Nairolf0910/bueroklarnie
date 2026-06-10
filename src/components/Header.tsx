@@ -1,11 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, FileCheck } from 'lucide-react';
+import { Menu, X, FileCheck, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { NotificationDropdown } from './NotificationDropdown';
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const location = useLocation();
 
   const isActive = (path: string) => location.pathname === path;
@@ -41,12 +42,24 @@ export function Header() {
                 >
                   Dashboard
                 </Link>
-                <button
-                  onClick={signOut}
-                  className="text-sm font-medium text-anthracite-600 hover:text-dark-blue-900 transition-colors"
-                >
-                  Abmelden
-                </button>
+
+                {/* Notification Bell */}
+                <NotificationDropdown />
+
+                {/* User Menu */}
+                <div className="flex items-center gap-3 pl-4 border-l border-anthracite-200">
+                  <div className="text-right hidden lg:block">
+                    <p className="text-sm font-medium text-dark-blue-900">{profile?.full_name?.split(' ')[0] || 'Kunde'}</p>
+                    <p className="text-xs text-anthracite-500">{profile?.company_name || 'Kundenkonto'}</p>
+                  </div>
+                  <button
+                    onClick={signOut}
+                    className="p-2 rounded-lg hover:bg-anthracite-100 text-anthracite-600 hover:text-dark-blue-900 transition-colors"
+                    title="Abmelden"
+                  >
+                    <LogOut className="w-5 h-5" />
+                  </button>
+                </div>
               </>
             ) : (
               <>

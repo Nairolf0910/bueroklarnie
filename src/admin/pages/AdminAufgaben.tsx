@@ -5,13 +5,12 @@ import {
   Loader2,
   Clock,
   AlertCircle,
-  FileText,
   MessageCircle,
   Upload,
   ChevronRight,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import type { ServiceRequest, Profile } from '../../types/database';
+import type { ServiceRequest } from '../../types/database';
 
 interface RequestWithDetails extends ServiceRequest {
   profiles: { full_name: string; email: string } | null;

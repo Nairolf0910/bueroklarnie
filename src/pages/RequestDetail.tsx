@@ -14,10 +14,12 @@ import {
   Trash2,
   X,
   PlusCircle,
+  History,
+  Paperclip,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import type { ServiceRequest, UploadedFile, Note } from '../types/database';
+import type { ServiceRequest, UploadedFile } from '../types/database';
 
 const statusConfig: Record<string, { color: string; bgColor: string; icon: React.ReactNode; label: string }> = {
   Eingegangen: {
@@ -46,6 +48,24 @@ const statusConfig: Record<string, { color: string; bgColor: string; icon: React
   },
 };
 
+interface RequestMessage {
+  id: string;
+  sender_user_id?: string;
+  sender_role: 'admin' | 'client';
+  message: string;
+  is_internal: boolean;
+  created_at: string;
+}
+
+interface RequestEvent {
+  id: string;
+  event_type: string;
+  event_label: string;
+  metadata: Record<string, unknown>;
+  visible_to_user: boolean;
+  created_at: string;
+}
+
 interface InlineUploadFile {
   file: File;
   status: 'pending' | 'uploading' | 'success' | 'error';
@@ -59,13 +79,16 @@ export function RequestDetail() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [request, setRequest] = useState<ServiceRequest | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [newNote, setNewNote] = useState('');
+  const [messages, setMessages] = useState<RequestMessage[]>([]);
+  const [events, setEvents] = useState<RequestEvent[]>([]);
+  const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [sendingNote, setSendingNote] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [activeTab, setActiveTab] = useState<'messages' | 'events'>('messages');
 
   // Inline Upload State
   const [showUploadPanel, setShowUploadPanel] = useState(false);
@@ -76,6 +99,10 @@ export function RequestDetail() {
   useEffect(() => {
     if (user && id) loadData();
   }, [user, id]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const loadData = async () => {
     try {
@@ -97,12 +124,21 @@ export function RequestDetail() {
         .order('created_at', { ascending: false });
       setFiles(filesData || []);
 
-      const { data: notesData } = await supabase
-        .from('notes')
+      const { data: messagesData } = await supabase
+        .from('request_messages')
         .select('*')
         .eq('request_id', id)
+        .eq('is_internal', false)
         .order('created_at', { ascending: true });
-      setNotes(notesData || []);
+      setMessages(messagesData || []);
+
+      const { data: eventsData } = await supabase
+        .from('request_events')
+        .select('*')
+        .eq('request_id', id)
+        .eq('visible_to_user', true)
+        .order('created_at', { ascending: true });
+      setEvents(eventsData || []);
 
       setLoading(false);
     } catch (error) {
@@ -143,11 +179,7 @@ export function RequestDetail() {
 
         const { error: storageErr } = await supabase.storage
           .from('documents')
-          .upload(fileName, item.file, {
-            onUploadProgress: (p) => {
-              updatePending(i, { progress: Math.round((p.loaded / p.total) * 100) });
-            },
-          });
+          .upload(fileName, item.file);
         if (storageErr) throw storageErr;
 
         const { data: inserted, error: dbErr } = await supabase
@@ -167,6 +199,15 @@ export function RequestDetail() {
 
         updatePending(i, { status: 'success', progress: 100 });
         setFiles((prev) => [inserted, ...prev]);
+
+        // Add event
+        await supabase.from('request_events').insert({
+          request_id: id,
+          event_type: 'file_uploaded',
+          event_label: `Datei hochgeladen: ${item.file.name}`,
+          metadata: { file_name: item.file.name, category: item.category },
+          visible_to_user: true,
+        });
       } catch (err) {
         console.error(err);
         updatePending(i, { status: 'error', error: 'Upload fehlgeschlagen' });
@@ -181,29 +222,30 @@ export function RequestDetail() {
     if (pendingFiles.every((f) => f.status === 'success')) setShowUploadPanel(false);
   };
 
-  // ── Notes ─────────────────────────────────────────────────────
-  const handleAddNote = async (e: React.FormEvent) => {
+  // ── Messages ─────────────────────────────────────────────────────
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNote.trim() || !request) return;
-    setSendingNote(true);
+    if (!newMessage.trim() || !request) return;
+    setSendingMessage(true);
     try {
       const { data, error } = await supabase
-        .from('notes')
+        .from('request_messages')
         .insert({
           request_id: request.id,
-          user_id: user!.id,
-          content: newNote.trim(),
-          is_from_admin: false,
+          sender_user_id: user!.id,
+          sender_role: 'client',
+          message: newMessage.trim(),
+          is_internal: false,
         })
         .select()
         .single();
       if (error) throw error;
-      setNotes((prev) => [...prev, data]);
-      setNewNote('');
+      setMessages((prev) => [...prev, data]);
+      setNewMessage('');
     } catch (error) {
-      console.error('Error adding note:', error);
+      console.error('Error sending message:', error);
     }
-    setSendingNote(false);
+    setSendingMessage(false);
   };
 
   // ── File actions ──────────────────────────────────────────────
@@ -225,9 +267,32 @@ export function RequestDetail() {
       await supabase.storage.from('documents').remove([file.file_path]);
       await supabase.from('uploaded_files').delete().eq('id', file.id);
       setFiles((prev) => prev.filter((f) => f.id !== file.id));
+
+      await supabase.from('request_events').insert({
+        request_id: id,
+        event_type: 'file_deleted',
+        event_label: `Datei gelöscht: ${file.file_name}`,
+        metadata: { file_name: file.file_name },
+        visible_to_user: false,
+      });
     } catch (error) {
       console.error('Error deleting file:', error);
     }
+  };
+
+  const formatEventTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'Gerade eben';
+    if (diffMins < 60) return `vor ${diffMins} Min.`;
+    if (diffHours < 24) return `vor ${diffHours} Std.`;
+    if (diffDays < 7) return `vor ${diffDays} Tag${diffDays > 1 ? 'en' : ''}`;
+    return date.toLocaleDateString('de-DE');
   };
 
   // ── Render ────────────────────────────────────────────────────
@@ -244,7 +309,7 @@ export function RequestDetail() {
 
   return (
     <div className="min-h-screen bg-anthracite-50">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
           <Link
@@ -286,11 +351,12 @@ export function RequestDetail() {
               </div>
             )}
 
-            {/* Dateien */}
+            {/* Files */}
             <div className="bg-white rounded-xl border border-anthracite-200 overflow-hidden">
               <div className="p-6 border-b border-anthracite-100 flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-dark-blue-900">
-                  Hochgeladene Dateien ({files.length})
+                <h2 className="text-lg font-semibold text-dark-blue-900 flex items-center gap-2">
+                  <Paperclip className="w-5 h-5" />
+                  Dateien ({files.length})
                 </h2>
                 {request.status !== 'Abgeschlossen' && (
                   <button
@@ -303,10 +369,9 @@ export function RequestDetail() {
                 )}
               </div>
 
-              {/* ── Inline Upload Panel ── */}
+              {/* Upload Panel */}
               {showUploadPanel && request.status !== 'Abgeschlossen' && (
                 <div className="p-4 border-b border-anthracite-100 bg-petrol-50/40">
-                  {/* Drop Zone */}
                   <div
                     onClick={() => fileInputRef.current?.click()}
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -329,7 +394,6 @@ export function RequestDetail() {
                     />
                   </div>
 
-                  {/* Pending file rows */}
                   {pendingFiles.length > 0 && (
                     <div className="space-y-2 mb-4">
                       {pendingFiles.map((item, idx) => (
@@ -357,15 +421,6 @@ export function RequestDetail() {
                             </div>
                           </div>
 
-                          {item.status === 'uploading' && (
-                            <div className="w-full bg-anthracite-100 rounded-full h-1 mb-2">
-                              <div
-                                className="bg-petrol-600 h-1 rounded-full transition-all"
-                                style={{ width: `${item.progress}%` }}
-                              />
-                            </div>
-                          )}
-
                           {item.status === 'pending' && (
                             <select
                               value={item.category}
@@ -383,7 +438,6 @@ export function RequestDetail() {
                     </div>
                   )}
 
-                  {/* Upload actions */}
                   <div className="flex items-center justify-between gap-3">
                     <button
                       onClick={() => { setShowUploadPanel(false); setPendingFiles([]); }}
@@ -393,10 +447,7 @@ export function RequestDetail() {
                     </button>
                     <div className="flex items-center gap-2">
                       {pendingFiles.some((f) => f.status === 'success') && (
-                        <button
-                          onClick={clearSuccessFiles}
-                          className="text-xs text-green-600 hover:underline"
-                        >
+                        <button onClick={clearSuccessFiles} className="text-xs text-green-600 hover:underline">
                           Erledigte ausblenden
                         </button>
                       )}
@@ -470,59 +521,113 @@ export function RequestDetail() {
               )}
             </div>
 
-            {/* Nachrichten */}
+            {/* Messages & Events Tabs */}
             <div className="bg-white rounded-xl border border-anthracite-200 overflow-hidden">
-              <div className="p-6 border-b border-anthracite-100">
-                <h2 className="text-lg font-semibold text-dark-blue-900 flex items-center gap-2">
-                  <MessageCircle className="w-5 h-5" />
-                  Nachrichten
-                </h2>
+              <div className="flex border-b border-anthracite-100">
+                <button
+                  onClick={() => setActiveTab('messages')}
+                  className={`flex-1 px-6 py-4 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                    activeTab === 'messages'
+                      ? 'text-petrol-700 bg-petrol-50 border-b-2 border-petrol-600'
+                      : 'text-anthracite-600 hover:bg-anthracite-50'
+                  }`}
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Nachrichten ({messages.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('events')}
+                  className={`flex-1 px-6 py-4 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                    activeTab === 'events'
+                      ? 'text-petrol-700 bg-petrol-50 border-b-2 border-petrol-600'
+                      : 'text-anthracite-600 hover:bg-anthracite-50'
+                  }`}
+                >
+                  <History className="w-4 h-4" />
+                  Verlauf ({events.length})
+                </button>
               </div>
-              <div className="divide-y divide-anthracite-100 max-h-96 overflow-y-auto">
-                {notes.length === 0 ? (
-                  <div className="p-6 text-center text-anthracite-500">
-                    Noch keine Nachrichten vorhanden.
-                  </div>
-                ) : (
-                  notes.map((note) => (
-                    <div
-                      key={note.id}
-                      className={`p-4 ${note.is_from_admin ? 'bg-petrol-50' : 'bg-anthracite-50'}`}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={`text-sm font-medium ${note.is_from_admin ? 'text-petrol-700' : 'text-dark-blue-900'}`}>
-                          {note.is_from_admin ? 'BüroKlarNie' : 'Sie'}
-                        </span>
-                        <span className="text-xs text-anthracite-400">
-                          {new Date(note.created_at).toLocaleDateString('de-DE', {
-                            day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                          })}
-                        </span>
+
+              {activeTab === 'messages' ? (
+                <>
+                  <div className="divide-y divide-anthracite-100 max-h-80 overflow-y-auto">
+                    {messages.length === 0 ? (
+                      <div className="p-8 text-center text-anthracite-500">
+                        <MessageCircle className="w-8 h-8 mx-auto mb-2 text-anthracite-300" />
+                        Noch keine Nachrichten vorhanden.
                       </div>
-                      <p className="text-anthracite-700 whitespace-pre-wrap">{note.content}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-              {request.status !== 'Abgeschlossen' && (
-                <form onSubmit={handleAddNote} className="p-4 border-t border-anthracite-100">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      placeholder="Nachricht schreiben..."
-                      className="flex-1 px-4 py-2 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!newNote.trim() || sendingNote}
-                      className="px-4 py-2 bg-petrol-600 text-white rounded-lg hover:bg-petrol-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {sendingNote ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                    </button>
+                    ) : (
+                      messages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`p-4 ${msg.sender_role === 'admin' ? 'bg-petrol-50' : 'bg-anthracite-50'}`}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-sm font-medium ${msg.sender_role === 'admin' ? 'text-petrol-700' : 'text-dark-blue-900'}`}>
+                              {msg.sender_role === 'admin' ? 'BüroKlarNie' : 'Sie'}
+                            </span>
+                            <span className="text-xs text-anthracite-400">
+                              {new Date(msg.created_at).toLocaleDateString('de-DE', {
+                                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          <p className="text-anthracite-700 whitespace-pre-wrap">{msg.message}</p>
+                        </div>
+                      ))
+                    )}
+                    <div ref={messagesEndRef} />
                   </div>
-                </form>
+                  {request.status !== 'Abgeschlossen' && (
+                    <form onSubmit={handleSendMessage} className="p-4 border-t border-anthracite-100">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          placeholder="Nachricht schreiben..."
+                          className="flex-1 px-4 py-2 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!newMessage.trim() || sendingMessage}
+                          className="px-4 py-2 bg-petrol-600 text-white rounded-lg hover:bg-petrol-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {sendingMessage ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </>
+              ) : (
+                <div className="max-h-96 overflow-y-auto">
+                  {events.length === 0 ? (
+                    <div className="p-8 text-center text-anthracite-500">
+                      <History className="w-8 h-8 mx-auto mb-2 text-anthracite-300" />
+                      Noch keine Ereignisse vorhanden.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-anthracite-100">
+                      {events.map((event) => (
+                        <div key={event.id} className="p-4 flex items-start gap-3 hover:bg-anthracite-50">
+                          <div className="w-8 h-8 bg-petrol-100 rounded-full flex items-center justify-center flex-shrink-0">
+                            {event.event_type === 'status_change' ? (
+                              <Clock className="w-4 h-4 text-petrol-600" />
+                            ) : event.event_type.includes('file') ? (
+                              <FileText className="w-4 h-4 text-petrol-600" />
+                            ) : (
+                              <History className="w-4 h-4 text-petrol-600" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-dark-blue-900">{event.event_label}</p>
+                            <p className="text-xs text-anthracite-500">{formatEventTime(event.created_at)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -534,8 +639,8 @@ export function RequestDetail() {
               <div className="space-y-4">
                 {['Eingegangen', 'In Prüfung', 'Rückfrage', 'Abgeschlossen'].map((status, index) => {
                   const isActive = request.status === status;
-                  const isPast =
-                    ['Eingegangen', 'In Prüfung', 'Rückfrage', 'Abgeschlossen'].indexOf(request.status) > index;
+                  const statusOrder = ['Eingegangen', 'In Prüfung', 'Rückfrage', 'Abgeschlossen'];
+                  const isPast = statusOrder.indexOf(request.status) > index;
                   return (
                     <div key={status} className="flex items-center gap-3">
                       <div
@@ -567,12 +672,26 @@ export function RequestDetail() {
                   <dt className="text-anthracite-500">Priorität</dt>
                   <dd className="font-medium text-dark-blue-900">{request.priority}</dd>
                 </div>
+                {request.category && (
+                  <div>
+                    <dt className="text-anthracite-500">Kategorie</dt>
+                    <dd className="font-medium text-dark-blue-900">{request.category}</dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-anthracite-500">Erstellt</dt>
                   <dd className="font-medium text-dark-blue-900">
                     {new Date(request.created_at).toLocaleDateString('de-DE')}
                   </dd>
                 </div>
+                {request.due_date && (
+                  <div>
+                    <dt className="text-anthracite-500">Fälligkeitsdatum</dt>
+                    <dd className="font-medium text-dark-blue-900">
+                      {new Date(request.due_date).toLocaleDateString('de-DE')}
+                    </dd>
+                  </div>
+                )}
                 {request.completed_at && (
                   <div>
                     <dt className="text-anthracite-500">Abgeschlossen</dt>
@@ -585,7 +704,7 @@ export function RequestDetail() {
             </div>
 
             <div className="bg-anthracite-100 rounded-lg p-4">
-              <p className="text-xs text-anthracite-600">
+              <p className="text-xs text-anthracite-600 leading-relaxed">
                 <strong>Hinweis:</strong> BüroKlarNie bietet keine steuerliche Beratung.
                 Professionelle Beleg-Vorbereitung für die Steuererklärung.
               </p>

@@ -15,6 +15,8 @@ import { RequestDetail } from './pages/RequestDetail';
 import { Contact } from './pages/Contact';
 import { Impressum } from './pages/Impressum';
 import { Datenschutz } from './pages/Datenschutz';
+import { Notifications } from './pages/Notifications';
+import { FAQ } from './pages/FAQ';
 
 // Admin imports
 import { AdminLayout } from './admin/AdminLayout';
@@ -26,6 +28,8 @@ import { AdminAuftragDetail } from './admin/pages/AdminAuftragDetail';
 import { AdminDateien } from './admin/pages/AdminDateien';
 import { AdminNotizen } from './admin/pages/AdminNotizen';
 import { AdminAufgaben } from './admin/pages/AdminAufgaben';
+import { AdminFAQ } from './admin/pages/AdminFAQ';
+import { AdminContent } from './admin/pages/AdminContent';
 
 function App() {
   return (
@@ -33,8 +37,9 @@ function App() {
       <Router>
         <div className="min-h-screen flex flex-col">
           <Routes>
-            {/* Public routes with header/footer */}
-            <Route path="/" element={<><Header /><main className="flex-1"><Landing /></main><Footer /></>} />
+            {/* Public routes - Landing has its own header */}
+            <Route path="/" element={<><main className="flex-1"><Landing /></main><Footer /></>} />
+            <Route path="/faq" element={<><Header /><main className="flex-1"><FAQ /></main><Footer /></>} />
             <Route path="/kontakt" element={<><Header /><main className="flex-1"><Contact /></main><Footer /></>} />
             <Route path="/impressum" element={<><Header /><main className="flex-1"><Impressum /></main><Footer /></>} />
             <Route path="/datenschutz" element={<><Header /><main className="flex-1"><Datenschutz /></main><Footer /></>} />
@@ -114,6 +119,20 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <>
+                    <Header />
+                    <main className="flex-1">
+                      <Notifications />
+                    </main>
+                    <Footer />
+                  </>
+                </ProtectedRoute>
+              }
+            />
 
             {/* Admin routes */}
             <Route
@@ -132,6 +151,8 @@ function App() {
               <Route path="dateien" element={<AdminDateien />} />
               <Route path="notizen" element={<AdminNotizen />} />
               <Route path="aufgaben" element={<AdminAufgaben />} />
+              <Route path="faq" element={<AdminFAQ />} />
+              <Route path="inhalte" element={<AdminContent />} />
             </Route>
 
             {/* Catch-all redirect */}
