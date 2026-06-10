@@ -112,11 +112,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setProfile(null);
-    // Hard reload: clears all in-memory state and redirects to home
-    window.location.href = '/';
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+  // Kein Hard-Reload – ProtectedRoute / AdminRoute übernehmen die Weiterleitung
   };
 
   const isAdmin = profile?.role === 'admin';
