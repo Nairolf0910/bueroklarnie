@@ -11,8 +11,10 @@ import { supabase } from '../../lib/supabase';
 import type { UploadedFile } from '../../types/database';
 
 interface FileWithDetails extends UploadedFile {
-  profiles: { full_name: string; email: string } | null;
-  service_requests: { title: string; status: string } | null;
+  profileName: string | null;
+  profileEmail: string | null;
+  requestTitle: string | null;
+  requestStatus: string | null;
 }
 
 const categoryConfig: Record<string, { color: string; label: string }> = {
@@ -33,38 +35,69 @@ export function AdminDateien() {
   }, [categoryFilter]);
 
   const loadFiles = async () => {
+    setLoading(true);
     try {
+      // 1) Dateien laden
       let query = supabase
         .from('uploaded_files')
-        .select(`
-          *,
-          profiles ( full_name, email ),
-          service_requests ( title, status )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (categoryFilter !== 'all') {
         query = query.eq('category', categoryFilter);
       }
 
-      const { data, error } = await query;
-
+      const { data: fileData, error } = await query;
       if (error) throw error;
-      setFiles(data || []);
-      setLoading(false);
+      if (!fileData || fileData.length === 0) {
+        setFiles([]);
+        return;
+      }
+
+      // 2) Profile separat laden (user_id)
+      const userIds = [...new Set(fileData.map((f) => f.user_id).filter(Boolean))];
+      const requestIds = [...new Set(fileData.map((f) => f.request_id).filter(Boolean))];
+
+      const [{ data: profileData }, { data: requestData }] = await Promise.all([
+        userIds.length > 0
+          ? supabase.from('profiles').select('id, full_name, email').in('id', userIds)
+          : Promise.resolve({ data: [] }),
+        requestIds.length > 0
+          ? supabase.from('service_requests').select('id, title, status').in('id', requestIds)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      // Lookup Maps
+      const profileMap: Record<string, { full_name: string; email: string }> = {};
+      (profileData || []).forEach((p) => { profileMap[p.id] = p; });
+
+      const requestMap: Record<string, { title: string; status: string }> = {};
+      (requestData || []).forEach((r) => { requestMap[r.id] = r; });
+
+      const enriched: FileWithDetails[] = fileData.map((f) => ({
+        ...f,
+        profileName: profileMap[f.user_id]?.full_name ?? null,
+        profileEmail: profileMap[f.user_id]?.email ?? null,
+        requestTitle: f.request_id ? (requestMap[f.request_id]?.title ?? null) : null,
+        requestStatus: f.request_id ? (requestMap[f.request_id]?.status ?? null) : null,
+      }));
+
+      setFiles(enriched);
     } catch (error) {
       console.error('Error loading files:', error);
+    } finally {
       setLoading(false);
     }
   };
 
   const filteredFiles = files.filter((file) => {
-    const searchLower = search.toLowerCase();
+    if (!search) return true;
+    const s = search.toLowerCase();
     return (
-      file.file_name.toLowerCase().includes(searchLower) ||
-      file.profiles?.full_name?.toLowerCase().includes(searchLower) ||
-      file.profiles?.email?.toLowerCase().includes(searchLower) ||
-      (file.description?.toLowerCase().includes(searchLower) ?? false)
+      (file.file_name ?? '').toLowerCase().includes(s) ||
+      (file.profileName ?? '').toLowerCase().includes(s) ||
+      (file.profileEmail ?? '').toLowerCase().includes(s) ||
+      (file.description ?? '').toLowerCase().includes(s)
     );
   });
 
@@ -73,7 +106,6 @@ export function AdminDateien() {
       const { data, error } = await supabase.storage
         .from('documents')
         .createSignedUrl(file.file_path, 3600);
-
       if (error) throw error;
       window.open(data.signedUrl, '_blank');
     } catch (error) {
@@ -83,7 +115,6 @@ export function AdminDateien() {
 
   const handleDelete = async (file: FileWithDetails) => {
     if (!confirm('Datei wirklich löschen?')) return;
-
     try {
       await supabase.storage.from('documents').remove([file.file_path]);
       await supabase.from('uploaded_files').delete().eq('id', file.id);
@@ -198,12 +229,12 @@ export function AdminDateien() {
                       </div>
                     </td>
                     <td className="px-4 py-4 hidden lg:table-cell">
-                      {file.profiles ? (
+                      {file.profileName ? (
                         <Link
                           to={`/admin/kunden/${file.user_id}`}
                           className="text-sm text-petrol-600 hover:text-petrol-700"
                         >
-                          {file.profiles.full_name}
+                          {file.profileName}
                         </Link>
                       ) : (
                         <span className="text-sm text-anthracite-400">Unbekannt</span>
@@ -215,12 +246,12 @@ export function AdminDateien() {
                       </span>
                     </td>
                     <td className="px-4 py-4 hidden lg:table-cell">
-                      {file.service_requests ? (
+                      {file.requestTitle ? (
                         <Link
                           to={`/admin/auftraege/${file.request_id}`}
                           className="text-sm text-petrol-600 hover:text-petrol-700"
                         >
-                          {file.service_requests.title}
+                          {file.requestTitle}
                         </Link>
                       ) : (
                         <span className="text-sm text-anthracite-400">–</span>

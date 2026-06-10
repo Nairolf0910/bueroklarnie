@@ -14,8 +14,8 @@ import { supabase } from '../../lib/supabase';
 import type { Profile } from '../../types/database';
 
 interface ProfileWithStats extends Profile {
-  service_requests: { count: number }[];
-  uploaded_files: { count: number }[];
+  requestCount: number;
+  fileCount: number;
 }
 
 export function AdminKunden() {
@@ -29,31 +29,66 @@ export function AdminKunden() {
 
   const loadProfiles = async () => {
     try {
-      const { data, error } = await supabase
+      // 1) Alle Profile laden (nur role = 'user' oder 'client', kein Admin)
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select(`
-          *,
-          service_requests (count),
-          uploaded_files (count)
-        `)
+        .select('*')
+        .in('role', ['user', 'client'])
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setProfiles(data || []);
-      setLoading(false);
+      if (profileError) throw profileError;
+      if (!profileData || profileData.length === 0) {
+        setProfiles([]);
+        setLoading(false);
+        return;
+      }
+
+      const ids = profileData.map((p) => p.id);
+
+      // 2) Auftrags-Counts separat
+      const { data: requestData } = await supabase
+        .from('service_requests')
+        .select('user_id')
+        .in('user_id', ids);
+
+      // 3) Datei-Counts separat
+      const { data: fileData } = await supabase
+        .from('uploaded_files')
+        .select('user_id')
+        .in('user_id', ids);
+
+      // Counts per user_id aufbauen
+      const requestCounts: Record<string, number> = {};
+      const fileCounts: Record<string, number> = {};
+
+      (requestData || []).forEach((r) => {
+        requestCounts[r.user_id] = (requestCounts[r.user_id] || 0) + 1;
+      });
+      (fileData || []).forEach((f) => {
+        fileCounts[f.user_id] = (fileCounts[f.user_id] || 0) + 1;
+      });
+
+      const enriched: ProfileWithStats[] = profileData.map((p) => ({
+        ...p,
+        requestCount: requestCounts[p.id] || 0,
+        fileCount: fileCounts[p.id] || 0,
+      }));
+
+      setProfiles(enriched);
     } catch (error) {
       console.error('Error loading profiles:', error);
+    } finally {
       setLoading(false);
     }
   };
 
   const filteredProfiles = profiles.filter((profile) => {
-    const searchLower = search.toLowerCase();
-    return (
-      profile.full_name.toLowerCase().includes(searchLower) ||
-      profile.email.toLowerCase().includes(searchLower) ||
-      (profile.company_name?.toLowerCase().includes(searchLower) ?? false)
-    );
+    if (!search) return true;
+    const s = search.toLowerCase();
+    const name = (profile.full_name ?? '').toLowerCase();
+    const email = (profile.email ?? '').toLowerCase();
+    const company = (profile.company_name ?? '').toLowerCase();
+    return name.includes(s) || email.includes(s) || company.includes(s);
   });
 
   if (loading) {
@@ -113,15 +148,19 @@ export function AdminKunden() {
                           <Users className="w-5 h-5 text-petrol-600" />
                         </div>
                         <div>
-                          <p className="font-medium text-dark-blue-900">{profile.full_name}</p>
-                          <p className="text-sm text-anthracite-500 lg:hidden">{profile.email}</p>
+                          <p className="font-medium text-dark-blue-900">
+                            {profile.full_name || '–'}
+                          </p>
+                          <p className="text-sm text-anthracite-500 lg:hidden">
+                            {profile.email || '–'}
+                          </p>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-4 hidden lg:table-cell">
                       <div className="flex items-center gap-2">
                         <Mail className="w-4 h-4 text-anthracite-400" />
-                        <span className="text-sm text-anthracite-600">{profile.email}</span>
+                        <span className="text-sm text-anthracite-600">{profile.email || '–'}</span>
                       </div>
                       {profile.phone && (
                         <p className="text-sm text-anthracite-500 mt-1">{profile.phone}</p>
@@ -140,13 +179,13 @@ export function AdminKunden() {
                     <td className="px-4 py-4 text-center">
                       <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium">
                         <FileText className="w-3 h-3" />
-                        {profile.service_requests?.[0]?.count || 0}
+                        {profile.requestCount}
                       </span>
                     </td>
                     <td className="px-4 py-4 text-center">
                       <span className="inline-flex items-center gap-1 px-2 py-1 bg-petrol-100 text-petrol-700 rounded text-sm font-medium">
                         <Upload className="w-3 h-3" />
-                        {profile.uploaded_files?.[0]?.count || 0}
+                        {profile.fileCount}
                       </span>
                     </td>
                     <td className="px-4 py-4 text-right">
