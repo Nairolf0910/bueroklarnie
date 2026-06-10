@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
+import { supabase } from '../lib/supabase';
 
 export function Contact() {
   const [name, setName] = useState('');
@@ -26,11 +27,18 @@ export function Contact() {
     setError(null);
     setLoading(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const { error: dbError } = await supabase
+      .from('contact_messages')
+      .insert({ name, email, subject, message });
+
+    if (dbError) {
+      setError('Ihre Nachricht konnte nicht gesendet werden. Bitte versuchen Sie es erneut.');
+      setLoading(false);
+      return;
+    }
 
     setSuccess(true);
     setLoading(false);
-
     setName('');
     setEmail('');
     setSubject('');
@@ -46,9 +54,7 @@ export function Contact() {
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
-            <h1 className="text-2xl font-bold text-dark-blue-900 mb-2">
-              Nachricht gesendet!
-            </h1>
+            <h1 className="text-2xl font-bold text-dark-blue-900 mb-2">Nachricht gesendet!</h1>
             <p className="text-anthracite-600 mb-6">
               Vielen Dank für Ihre Nachricht. Wir werden uns so schnell wie möglich bei Ihnen melden.
             </p>
@@ -84,50 +90,33 @@ export function Contact() {
                 <Mail className="w-6 h-6 text-petrol-600" />
               </div>
               <h3 className="font-semibold text-dark-blue-900 mb-2">E-Mail</h3>
-              <a
-                href="mailto:kontakt@bueroklarnie.de"
-                className="text-petrol-600 hover:text-petrol-700 transition-colors"
-              >
+              <a href="mailto:kontakt@bueroklarnie.de" className="text-petrol-600 hover:text-petrol-700 transition-colors">
                 kontakt@bueroklarnie.de
               </a>
             </div>
-
             <div className="bg-white rounded-xl border border-anthracite-200 p-6">
               <div className="w-12 h-12 bg-petrol-100 rounded-lg flex items-center justify-center mb-4">
                 <Phone className="w-6 h-6 text-petrol-600" />
               </div>
               <h3 className="font-semibold text-dark-blue-900 mb-2">Telefon</h3>
-              <a
-                href="tel:+493012345678"
-                className="text-petrol-600 hover:text-petrol-700 transition-colors"
-              >
+              <a href="tel:+493012345678" className="text-petrol-600 hover:text-petrol-700 transition-colors">
                 +49 30 12345678
               </a>
-              <p className="text-sm text-anthracite-500 mt-1">
-                Mo–Fr: 9:00 – 17:00 Uhr
-              </p>
+              <p className="text-sm text-anthracite-500 mt-1">Mo–Fr: 9:00 – 17:00 Uhr</p>
             </div>
-
             <div className="bg-white rounded-xl border border-anthracite-200 p-6">
               <div className="w-12 h-12 bg-petrol-100 rounded-lg flex items-center justify-center mb-4">
                 <MapPin className="w-6 h-6 text-petrol-600" />
               </div>
               <h3 className="font-semibold text-dark-blue-900 mb-2">Adresse</h3>
-              <p className="text-anthracite-600">
-                BüroKlarNie<br />
-                Musterstraße 123<br />
-                10115 Berlin
-              </p>
+              <p className="text-anthracite-600">BüroKlarNie<br />Musterstraße 123<br />10115 Berlin</p>
             </div>
           </div>
 
           {/* Contact Form */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-xl border border-anthracite-200 p-6">
-              <h2 className="text-xl font-semibold text-dark-blue-900 mb-6">
-                Nachricht senden
-              </h2>
-
+              <h2 className="text-xl font-semibold text-dark-blue-900 mb-6">Nachricht senden</h2>
               <form onSubmit={handleSubmit} className="space-y-6">
                 {error && (
                   <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
@@ -135,81 +124,35 @@ export function Contact() {
                     <p className="text-sm">{error}</p>
                   </div>
                 )}
-
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="name" className="block text-sm font-medium text-dark-blue-900 mb-2">
-                      Name *
-                    </label>
-                    <input
-                      id="name"
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="w-full px-4 py-3 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500 focus:border-transparent"
-                      required
-                    />
+                    <label htmlFor="name" className="block text-sm font-medium text-dark-blue-900 mb-2">Name *</label>
+                    <input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)}
+                      className="w-full px-4 py-3 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500 focus:border-transparent" required />
                   </div>
-
                   <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-dark-blue-900 mb-2">
-                      E-Mail *
-                    </label>
-                    <input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full px-4 py-3 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500 focus:border-transparent"
-                      required
-                    />
+                    <label htmlFor="email" className="block text-sm font-medium text-dark-blue-900 mb-2">E-Mail *</label>
+                    <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                      className="w-full px-4 py-3 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500 focus:border-transparent" required />
                   </div>
                 </div>
-
                 <div>
-                  <label htmlFor="subject" className="block text-sm font-medium text-dark-blue-900 mb-2">
-                    Betreff *
-                  </label>
-                  <input
-                    id="subject"
-                    type="text"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="w-full px-4 py-3 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500 focus:border-transparent"
-                    required
-                  />
+                  <label htmlFor="subject" className="block text-sm font-medium text-dark-blue-900 mb-2">Betreff *</label>
+                  <input id="subject" type="text" value={subject} onChange={(e) => setSubject(e.target.value)}
+                    className="w-full px-4 py-3 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500 focus:border-transparent" required />
                 </div>
-
                 <div>
-                  <label htmlFor="message" className="block text-sm font-medium text-dark-blue-900 mb-2">
-                    Nachricht *
-                  </label>
-                  <textarea
-                    id="message"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    rows={6}
-                    className="w-full px-4 py-3 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500 focus:border-transparent resize-none"
-                    required
-                  />
+                  <label htmlFor="message" className="block text-sm font-medium text-dark-blue-900 mb-2">Nachricht *</label>
+                  <textarea id="message" value={message} onChange={(e) => setMessage(e.target.value)} rows={6}
+                    className="w-full px-4 py-3 border border-anthracite-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500 focus:border-transparent resize-none" required />
                 </div>
-
                 <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-petrol-600 text-white rounded-lg font-medium hover:bg-petrol-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
+                  <button type="submit" disabled={loading}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-petrol-600 text-white rounded-lg font-medium hover:bg-petrol-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                     {loading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        Wird gesendet...
-                      </>
+                      <><Loader2 className="w-5 h-5 animate-spin" />Wird gesendet...</>
                     ) : (
-                      <>
-                        <Send className="w-5 h-5" />
-                        Nachricht senden
-                      </>
+                      <><Send className="w-5 h-5" />Nachricht senden</>
                     )}
                   </button>
                 </div>
@@ -218,7 +161,6 @@ export function Contact() {
           </div>
         </div>
 
-        {/* Notice */}
         <div className="mt-8 bg-dark-blue-50 rounded-xl p-6 border border-dark-blue-100">
           <p className="text-sm text-anthracite-600 text-center">
             <strong>Hinweis:</strong> BüroKlarNie bietet keine steuerliche oder rechtliche Beratung.
