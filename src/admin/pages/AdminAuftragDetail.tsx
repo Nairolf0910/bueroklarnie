@@ -19,6 +19,7 @@ import {
   EyeOff,
   PlusCircle,
   X,
+  Tag,
 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
@@ -68,6 +69,14 @@ export function AdminAuftragDetail() {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [activeTab, setActiveTab] = useState<'messages' | 'events'>('messages');
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+
+  const categories = [
+    { value: 'Rechnung', label: 'Rechnung' },
+    { value: 'Quittung', label: 'Quittung' },
+    { value: 'Bankauszug', label: 'Bankauszug' },
+    { value: 'Sonstiges', label: 'Sonstiges' },
+  ];
 
   useEffect(() => {
     if (id) {
@@ -282,6 +291,38 @@ export function AdminAuftragDetail() {
     }
   };
 
+  const updateFileCategory = async (file: UploadedFile, newCategory: string) => {
+    if (newCategory === file.category) {
+      setEditingFileId(null);
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('uploaded_files')
+        .update({ category: newCategory })
+        .eq('id', file.id);
+
+      if (error) throw error;
+
+      setFiles((prev) =>
+        prev.map((f) => (f.id === file.id ? { ...f, category: newCategory } : f))
+      );
+
+      await supabase.from('request_events').insert({
+        request_id: id,
+        event_type: 'file_category_changed',
+        event_label: `Kategorie geändert: ${file.file_name} (${file.category} → ${newCategory})`,
+        metadata: { file_name: file.file_name, old_category: file.category, new_category: newCategory },
+        visible_to_user: false,
+      });
+
+      setEditingFileId(null);
+    } catch (error) {
+      console.error('Error updating file category:', error);
+    }
+  };
+
   const formatEventTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('de-DE', {
@@ -451,18 +492,40 @@ export function AdminAuftragDetail() {
               <div className="divide-y divide-anthracite-100">
                 {files.map((file) => (
                   <div key={file.id} className="p-4 flex items-center justify-between hover:bg-anthracite-50">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-anthracite-100 rounded-lg flex items-center justify-center">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-10 h-10 bg-anthracite-100 rounded-lg flex items-center justify-center flex-shrink-0">
                         <FileText className="w-5 h-5 text-anthracite-600" />
                       </div>
-                      <div>
-                        <p className="font-medium text-dark-blue-900">{file.file_name}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium text-dark-blue-900 truncate">{file.file_name}</p>
                         <p className="text-sm text-anthracite-500">
-                          {file.category} • {file.file_size ? `${(file.file_size / 1024).toFixed(1)} KB` : ''} • {new Date(file.created_at).toLocaleDateString('de-DE')}
+                          {file.file_size ? `${(file.file_size / 1024).toFixed(1)} KB` : ''} • {new Date(file.created_at).toLocaleDateString('de-DE')}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      {editingFileId === file.id ? (
+                        <select
+                          defaultValue={file.category}
+                          autoFocus
+                          onBlur={(e) => updateFileCategory(file, e.target.value)}
+                          onChange={(e) => updateFileCategory(file, e.target.value)}
+                          className="px-2 py-1 text-sm border border-petrol-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-petrol-500 bg-white"
+                        >
+                          {categories.map((cat) => (
+                            <option key={cat.value} value={cat.value}>{cat.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span
+                          onClick={() => setEditingFileId(file.id)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity bg-anthracite-100 text-anthracite-700 rounded"
+                          title="Klicken zum Ändern"
+                        >
+                          <Tag className="w-3 h-3" />
+                          {file.category}
+                        </span>
+                      )}
                       <button
                         onClick={() => handleDownloadFile(file)}
                         className="p-2 hover:bg-petrol-50 rounded-lg text-anthracite-400 hover:text-petrol-600"
