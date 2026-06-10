@@ -6,7 +6,7 @@ import { NotificationDropdown } from './NotificationDropdown';
 
 export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, isAdmin } = useAuth();
   const location = useLocation();
 
   const isActive = (path: string) => location.pathname === path;
@@ -24,13 +24,17 @@ export function Header() {
           <div className="hidden md:flex items-center gap-8">
             <Link
               to="/"
-              className={`text-sm font-medium transition-colors ${isActive('/') ? 'text-petrol-600' : 'text-anthracite-600 hover:text-dark-blue-900'}`}
+              className={`text-sm font-medium transition-colors ${
+                isActive('/') ? 'text-petrol-600' : 'text-anthracite-600 hover:text-dark-blue-900'
+              }`}
             >
               Startseite
             </Link>
             <Link
               to="/kontakt"
-              className={`text-sm font-medium transition-colors ${isActive('/kontakt') ? 'text-petrol-600' : 'text-anthracite-600 hover:text-dark-blue-900'}`}
+              className={`text-sm font-medium transition-colors ${
+                isActive('/kontakt') ? 'text-petrol-600' : 'text-anthracite-600 hover:text-dark-blue-900'
+              }`}
             >
               Kontakt
             </Link>
@@ -38,7 +42,9 @@ export function Header() {
               <>
                 <Link
                   to="/dashboard"
-                  className={`text-sm font-medium transition-colors ${isActive('/dashboard') ? 'text-petrol-600' : 'text-anthracite-600 hover:text-dark-blue-900'}`}
+                  className={`text-sm font-medium transition-colors ${
+                    isActive('/dashboard') ? 'text-petrol-600' : 'text-anthracite-600 hover:text-dark-blue-900'
+                  }`}
                 >
                   Dashboard
                 </Link>
@@ -49,8 +55,17 @@ export function Header() {
                 {/* User Menu */}
                 <div className="flex items-center gap-3 pl-4 border-l border-anthracite-200">
                   <div className="text-right hidden lg:block">
-                    <p className="text-sm font-medium text-dark-blue-900">{profile?.full_name?.split(' ')[0] || 'Kunde'}</p>
-                    <p className="text-xs text-anthracite-500">{profile?.company_name || 'Kundenkonto'}</p>
+                    <p className="text-sm font-medium text-dark-blue-900">
+                      {profile?.full_name?.split(' ')[0] || 'Kunde'}
+                    </p>
+                    <p className="text-xs text-anthracite-500">
+                      {profile?.company_name || 'Kundenkonto'}
+                    </p>
+                    {isAdmin && (
+                      <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-petrol-50 text-petrol-700 border border-petrol-100">
+                        Admin
+                      </span>
+                    )}
                   </div>
                   <button
                     onClick={signOut}
@@ -94,14 +109,18 @@ export function Header() {
             <div className="flex flex-col gap-4">
               <Link
                 to="/"
-                className={`text-sm font-medium ${isActive('/') ? 'text-petrol-600' : 'text-anthracite-600'}`}
+                className={`text-sm font-medium ${
+                  isActive('/') ? 'text-petrol-600' : 'text-anthracite-600'
+                }`}
                 onClick={() => setIsMenuOpen(false)}
               >
                 Startseite
               </Link>
               <Link
                 to="/kontakt"
-                className={`text-sm font-medium ${isActive('/kontakt') ? 'text-petrol-600' : 'text-anthracite-600'}`}
+                className={`text-sm font-medium ${
+                  isActive('/kontakt') ? 'text-petrol-600' : 'text-anthracite-600'
+                }`}
                 onClick={() => setIsMenuOpen(false)}
               >
                 Kontakt
@@ -110,17 +129,27 @@ export function Header() {
                 <>
                   <Link
                     to="/dashboard"
-                    className={`text-sm font-medium ${isActive('/dashboard') ? 'text-petrol-600' : 'text-anthracite-600'}`}
+                    className={`text-sm font-medium ${
+                      isActive('/dashboard') ? 'text-petrol-600' : 'text-anthracite-600'
+                    }`}
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Dashboard
                   </Link>
+                  {isAdmin && (
+                    <Link
+                      to="/admin"
+                      className={`text-sm font-medium ${
+                        location.pathname.startsWith('/admin') ? 'text-petrol-600' : 'text-anthracite-600'
+                      }`}
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      Adminbereich
+                    </Link>
+                  )}
                   <button
-                    onClick={() => {
-                      signOut();
-                      setIsMenuOpen(false);
-                    }}
-                    className="text-sm font-medium text-anthracite-600 text-left"
+                    onClick={() => { signOut(); setIsMenuOpen(false); }}
+                    className="text-left text-sm font-medium text-anthracite-600"
                   >
                     Abmelden
                   </button>
@@ -136,7 +165,7 @@ export function Header() {
                   </Link>
                   <Link
                     to="/register"
-                    className="px-4 py-2 bg-petrol-600 text-white rounded-lg text-sm font-medium text-center"
+                    className="text-sm font-medium text-petrol-600"
                     onClick={() => setIsMenuOpen(false)}
                   >
                     Registrieren
